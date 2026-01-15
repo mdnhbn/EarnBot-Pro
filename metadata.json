@@ -1,0 +1,8 @@
+{
+  "name": "EarnBot Pro",
+  "description": "A comprehensive Telegram Mini App ecosystem for earning rewards through tasks, featuring a multi-source task engine, gamification system, and user-side advertising portal.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
