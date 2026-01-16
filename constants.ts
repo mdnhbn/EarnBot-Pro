@@ -1,18 +1,19 @@
 
-import { User, UserRole, MandatoryChannel, LevelRequirement, Task, TaskType } from './types';
+import { MandatoryChannel, LevelRequirement, Task, TaskType } from './types';
 
 // ==========================================
-// CONFIGURATION - CHANGE YOUR ID HERE
+// 🛡️ SECURITY CONFIGURATION
 // ==========================================
-export const SUPER_ADMIN_ID = 929198867; 
+export const SUPER_ADMIN_ID = 929198867; // Your Telegram ID
+export const BOT_TOKEN = "7434869863:AAEZC1Y4Cb_91-jYtDdybr97XkH7fuC2weM";
 
 export const DEFAULT_SETTINGS = {
   mandatoryChannels: [
     { id: '1', name: 'EarnBot Official', url: 'https://t.me/earnbot_news' },
-    { id: '2', name: 'Crypto Alpha', url: 'https://t.me/crypto_alpha' },
-    { id: '3', name: 'Airdrop King', url: 'https://t.me/airdrop_king' },
-    { id: '4', name: 'Paid Ads 1', url: 'https://t.me/ads_1' },
-    { id: '5', name: 'Support Group', url: 'https://t.me/support' },
+    { id: '2', name: 'Alpha Crypto', url: 'https://t.me/alpha_crypto' },
+    { id: '3', name: 'Task Updates', url: 'https://t.me/task_updates' },
+    { id: '4', name: 'Payment Proofs', url: 'https://t.me/payment_proofs' },
+    { id: '5', name: 'Community Chat', url: 'https://t.me/community' },
   ],
   levelRequirements: [
     { level: 1, xpNeeded: 0, bonus: 0 },
@@ -25,21 +26,12 @@ export const DEFAULT_SETTINGS = {
   minWithdrawalTRX: 500,
 };
 
-// Fix: Exporting LEVEL_REQUIREMENTS helper function to determine XP threshold for the next level.
-// This matches the expected usage in components/Dashboard.tsx
-export const LEVEL_REQUIREMENTS = (level: number) => {
-  const nextLevel = level + 1;
-  const requirement = DEFAULT_SETTINGS.levelRequirements.find(r => r.level === nextLevel);
-  // Return the XP needed for the next level, or the cap level requirement if already at max.
-  return requirement ? requirement.xpNeeded : DEFAULT_SETTINGS.levelRequirements[DEFAULT_SETTINGS.levelRequirements.length - 1].xpNeeded;
-};
-
 export const INITIAL_TASKS: Task[] = [
   {
     id: 't1',
     creatorId: 'admin',
     type: TaskType.YOUTUBE,
-    title: 'Watch & Subscribe',
+    title: 'Watch New Strategy',
     url: 'https://youtube.com',
     reward: 50,
     timer: 30,
@@ -47,3 +39,10 @@ export const INITIAL_TASKS: Task[] = [
     viewCount: 0
   }
 ];
+
+export const LEVEL_REQUIREMENTS = (level: number, currentSettings?: LevelRequirement[]) => {
+  const source = currentSettings || DEFAULT_SETTINGS.levelRequirements;
+  const nextLevel = level + 1;
+  const requirement = source.find(r => r.level === nextLevel);
+  return requirement ? requirement.xpNeeded : source[source.length - 1].xpNeeded;
+};
