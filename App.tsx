@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, UserRole, Task, GlobalSettings, Withdrawal } from './types';
 import Navigation from './components/Navigation';
@@ -11,9 +10,9 @@ import JoinGuard from './components/JoinGuard';
 import { SUPER_ADMIN_ID, DEFAULT_SETTINGS } from './constants';
 
 /**
- * ✅ DYNAMIC API BASE CONFIGURATION
+ * ✅ FINAL HARDCODED BACKEND URL
  */
-const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'https://earnbot-pro.onrender.com';
+const API_BASE = 'https://earnbot-pro.onrender.com';
 
 const App: React.FC = () => {
   const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -24,31 +23,38 @@ const App: React.FC = () => {
   
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isLoading, setIsLoading] = useState(true);
-  const [loadingStep, setLoadingStep] = useState('Initializing Security...');
+  const [error, setError] = useState<string | null>(null);
+  const [loadingStep, setLoadingStep] = useState('Connecting to Engine...');
 
-  useEffect(() => {
+  const initApp = async () => {
+    setIsLoading(true);
+    setError(null);
     let retryCount = 0;
-    const maxRetries = 10; // Increased retries for Render cold starts
+    const maxRetries = 10;
 
-    const initApp = async () => {
+    const attemptFetch = async () => {
       try {
         const webapp = (window as any).Telegram?.WebApp;
         if (webapp) {
           webapp.expand();
           webapp.ready();
+          webapp.setHeaderColor('#020617');
         }
 
         const tgId = webapp?.initDataUnsafe?.user?.id || SUPER_ADMIN_ID;
-        const username = webapp?.initDataUnsafe?.user?.username || 'User_' + tgId;
+        const username = webapp?.initDataUnsafe?.user?.username || 'user' + tgId;
         
-        setLoadingStep(`Connecting to Engine (Attempt ${retryCount + 1})...`);
+        setLoadingStep(`Contacting Server... (Attempt ${retryCount + 1})`);
         
         const res = await fetch(`${API_BASE}/api/init/${tgId}`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
         
-        if (!res.ok) throw new Error(`Server Status: ${res.status}`);
+        if (!res.ok) {
+          if (res.status === 503) throw new Error("Server is currently waking up...");
+          throw new Error(`Connection Error (Status ${res.status})`);
+        }
 
         const data = await res.json();
         
@@ -60,7 +66,7 @@ const App: React.FC = () => {
         if (data.user) {
           setCurrentUser(data.user);
         } else {
-          setLoadingStep('Generating Account...');
+          setLoadingStep('Syncing Profile...');
           const newUser: User = {
             id: 'u' + Math.random().toString(36).substr(2, 9),
             telegramId: tgId,
@@ -74,27 +80,33 @@ const App: React.FC = () => {
             isVerified: false
           };
           
-          await fetch(`${API_BASE}/api/user/sync`, {
+          const syncRes = await fetch(`${API_BASE}/api/user/sync`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newUser)
           });
+          
+          if (!syncRes.ok) throw new Error("Failed to sync user data.");
           setCurrentUser(newUser);
         }
         setIsLoading(false);
-      } catch (err) {
-        console.error("Init failure:", err);
-        
+      } catch (err: any) {
+        console.warn("Init Error:", err);
         if (retryCount < maxRetries) {
           retryCount++;
-          setLoadingStep(`Server is waking up (Render tier)... ${retryCount}/${maxRetries}`);
-          setTimeout(initApp, 3500);
+          setLoadingStep(err.message || "Retrying connection...");
+          setTimeout(attemptFetch, 3000);
         } else {
-          setLoadingStep('Critical: Engine unreachable. Check internet connection.');
+          setError("Engine offline. Please check your connection or wait for the server to wake up on Render.");
+          setIsLoading(false);
         }
       }
     };
 
+    attemptFetch();
+  };
+
+  useEffect(() => {
     initApp();
   }, []);
 
@@ -107,7 +119,7 @@ const App: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
-      }).catch(e => console.error("Cloud sync failed:", e));
+      }).catch(e => console.error("Cloud sync error:", e));
 
       setUsers(all => all.map(u => u.telegramId === prev.telegramId ? updated : u));
       return updated;
@@ -139,33 +151,48 @@ const App: React.FC = () => {
 
   const isSuperAdmin = currentUser?.telegramId === SUPER_ADMIN_ID;
 
+  if (error) return (
+    <div className="flex h-screen flex-col items-center justify-center bg-[#020617] p-8 text-center">
+      <div className="text-5xl mb-6">⚠️</div>
+      <h1 className="text-white font-black text-xl uppercase mb-4">Connection Failed</h1>
+      <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+        {error}
+      </p>
+      <button 
+        onClick={() => window.location.reload()}
+        className="bg-blue-600 px-10 py-4 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95"
+      >
+        Retry Connection
+      </button>
+    </div>
+  );
+
   if (isLoading) return (
-    <div className="flex h-screen items-center justify-center bg-[#0f172a]">
-      <div className="text-center px-6">
-        <div className="w-20 h-20 bg-blue-600 rounded-[2rem] mx-auto mb-8 flex items-center justify-center text-3xl shadow-[0_0_50px_rgba(37,99,235,0.4)] animate-pulse">💎</div>
-        <h2 className="text-white font-black text-xl tracking-[0.2em] uppercase mb-2">EarnBot Pro</h2>
-        <div className="h-1 w-48 bg-slate-800 rounded-full mx-auto overflow-hidden">
-          <div className="h-full bg-blue-500 animate-[loading_2s_infinite]"></div>
+    <div className="flex h-screen flex-col items-center justify-center bg-[#020617] p-8 text-center">
+      <div className="relative mb-10">
+        <div className="absolute inset-0 bg-blue-500 rounded-full blur-[60px] opacity-20 animate-pulse"></div>
+        <div className="w-24 h-24 bg-blue-600 rounded-[2.5rem] flex items-center justify-center text-4xl shadow-[0_0_50px_rgba(37,99,235,0.5)] relative z-10 animate-pulse-slow">
+          💎
         </div>
-        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.3em] mt-4 leading-relaxed">
-          {loadingStep}
-        </p>
       </div>
-      <style>{`
-        @keyframes loading {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-      `}</style>
+      <h1 className="text-white font-black text-2xl tracking-[0.3em] uppercase italic mb-2">EarnBot Pro</h1>
+      <div className="flex items-center gap-2 mt-2">
+        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+      </div>
+      <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] mt-8 opacity-70">
+        {loadingStep}
+      </p>
     </div>
   );
 
   if (currentUser?.isBanned) return (
-    <div className="flex h-screen items-center justify-center bg-[#0f172a] p-10 text-center">
+    <div className="flex h-screen items-center justify-center bg-[#020617] p-10 text-center">
        <div>
          <span className="text-7xl">🚫</span>
-         <h1 className="text-2xl font-black mt-4 uppercase text-red-500">Security Access Denied</h1>
-         <p className="text-slate-500 mt-2 text-sm">Your account has been restricted by the system administrator.</p>
+         <h1 className="text-2xl font-black mt-4 uppercase text-red-500 tracking-tighter">Access Denied</h1>
+         <p className="text-slate-500 mt-2 text-sm">Security policies restricted this account.</p>
        </div>
     </div>
   );

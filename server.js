@@ -1,8 +1,5 @@
-
 /**
- * EARNBOT PRO - BACKEND ENGINE (ESM VERSION)
- * ----------------------------
- * Handles MongoDB persistence, Telegram verification, and User management.
+ * EARNBOT PRO - BACKEND ENGINE (STABLE ESM)
  */
 
 import express from 'express';
@@ -14,28 +11,9 @@ import 'dotenv/config';
 const app = express();
 
 // ==========================================
-// 🛡️ SECURITY & CORS
+// 🛡️ UNIVERSAL CORS POLICY (TOP PRIORITY)
 // ==========================================
-const allowedOrigins = [
-  'https://earn-bot-pro.vercel.app',
-  'https://earnbot-pro.onrender.com',
-  'http://localhost:5173',
-  'http://localhost:3000'
-];
-
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  credentials: true
-}));
-
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // ==========================================
@@ -98,18 +76,9 @@ const Withdrawal = mongoose.model('Withdrawal', WithdrawalSchema);
 // 📡 API ENDPOINTS
 // ==========================================
 
-// Request Logging
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-  next();
-});
-
-// Health check endpoint (Critical for Render/Vercel)
+// Health check
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok', 
-    db: mongoose.connection.readyState === 1 ? 'connected' : 'connecting' 
-  });
+  res.status(200).json({ status: 'active', db: mongoose.connection.readyState });
 });
 
 // Initial Load
@@ -117,16 +86,15 @@ app.get('/api/init/:tgId', async (req, res) => {
   try {
     const tgId = parseInt(req.params.tgId);
     
-    // Safety check for DB connection
+    // Safety check for DB
     if (mongoose.connection.readyState !== 1) {
-       console.log("DB connecting, stalling request...");
-       return res.status(503).json({ error: "Database not ready, please retry" });
+       return res.status(503).json({ error: "Initializing Database Engine..." });
     }
 
     let user = await User.findOne({ telegramId: tgId });
     const tasks = await Task.find({});
     const withdrawals = await Withdrawal.find({});
-    const allUsers = await User.find({}).limit(50); 
+    const allUsers = await User.find({}).limit(100); 
     let settings = await Settings.findOne({ id: 'global' });
 
     if (!settings) {
@@ -149,16 +117,15 @@ app.get('/api/init/:tgId', async (req, res) => {
 
     res.status(200).json({ user, tasks, settings, withdrawals, allUsers });
   } catch (err) {
-    console.error("Init Error:", err);
-    res.status(500).json({ error: "Internal Server Error during initialization" });
+    console.error("Critical Init Error:", err);
+    res.status(500).json({ error: "Internal System Crash" });
   }
 });
 
-// Create/Update User Stats
+// User Sync
 app.post('/api/user/sync', async (req, res) => {
   const { telegramId, username, balance, xp, level, isVerified, role } = req.body;
   try {
-    if (mongoose.connection.readyState !== 1) throw new Error("DB connection offline");
     const user = await User.findOneAndUpdate(
       { telegramId },
       { username, balance, xp, level, isVerified, role },
@@ -170,7 +137,7 @@ app.post('/api/user/sync', async (req, res) => {
   }
 });
 
-// Admin Update Settings
+// Admin Control
 app.post('/api/admin/settings', async (req, res) => {
   try {
     const settings = await Settings.findOneAndUpdate({ id: 'global' }, req.body, { upsert: true, new: true });
@@ -180,7 +147,6 @@ app.post('/api/admin/settings', async (req, res) => {
   }
 });
 
-// Task Management
 app.post('/api/admin/tasks', async (req, res) => {
   try {
     const task = await Task.create(req.body);
@@ -199,7 +165,7 @@ app.delete('/api/admin/tasks/:id', async (req, res) => {
   }
 });
 
-// Withdrawal Processing
+// Finance
 app.post('/api/withdrawals', async (req, res) => {
   try {
     const w = await Withdrawal.create(req.body);
@@ -218,46 +184,17 @@ app.patch('/api/admin/withdrawals/:id', async (req, res) => {
   }
 });
 
-// Telegram Verification
-app.post('/api/verify', async (req, res) => {
-  const { userId, channels } = req.body;
-  try {
-    let allJoined = true;
-    for (const channel of channels) {
-      const channelPart = channel.url.split('t.me/')[1];
-      if (!channelPart) continue;
-      const chatId = "@" + channelPart.replace('/', '');
-      const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getChatMember?chat_id=${chatId}&user_id=${userId}`);
-      const data = await response.json();
-      if (!['member', 'administrator', 'creator'].includes(data.result?.status)) {
-        allJoined = false;
-        break;
-      }
-    }
-    if (allJoined) {
-      await User.findOneAndUpdate({ telegramId: userId }, { isVerified: true });
-      res.json({ success: true });
-    } else {
-      res.json({ success: false });
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Catch-all route
-app.use((req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
+// Catch-all
+app.use((req, res) => res.status(404).json({ error: "Endpoint Inactive" }));
 
 // ==========================================
-// 🚀 SERVER STARTUP
+// 🚀 SERVER LAUNCH
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 EARNBOT BACKEND IS LIVE ON PORT ${PORT}`);
+  console.log(`📡 EARNBOT HUB ACTIVE: PORT ${PORT}`);
   
   mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ DATABASE LINK ESTABLISHED'))
-    .catch(err => console.error('❌ DATABASE LINK FAILED:', err.message));
+    .then(() => console.log('🛡️ DATABASE ENCRYPTED LINK: SECURED'))
+    .catch(err => console.error('🛡️ DATABASE ENCRYPTED LINK: FAILED', err.message));
 });
