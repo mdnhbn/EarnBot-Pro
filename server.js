@@ -13,8 +13,29 @@ import 'dotenv/config';
 
 const app = express();
 
-// Standard Middlewares
-app.use(cors());
+// ==========================================
+// 🛡️ SECURITY & CORS
+// ==========================================
+const allowedOrigins = [
+  'https://earn-bot-pro.vercel.app',
+  'https://earnbot-pro.onrender.com',
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
+}));
+
 app.use(express.json());
 
 // ==========================================
@@ -83,20 +104,32 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check endpoint (Critical for Render/Vercel)
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    db: mongoose.connection.readyState === 1 ? 'connected' : 'connecting' 
+  });
+});
+
 // Initial Load
 app.get('/api/init/:tgId', async (req, res) => {
   try {
     const tgId = parseInt(req.params.tgId);
-    console.log(`Initializing app for user: ${tgId}`);
     
+    // Safety check for DB connection
+    if (mongoose.connection.readyState !== 1) {
+       console.log("DB connecting, stalling request...");
+       return res.status(503).json({ error: "Database not ready, please retry" });
+    }
+
     let user = await User.findOne({ telegramId: tgId });
     const tasks = await Task.find({});
     const withdrawals = await Withdrawal.find({});
-    const allUsers = await User.find({}).limit(100); 
+    const allUsers = await User.find({}).limit(50); 
     let settings = await Settings.findOne({ id: 'global' });
 
     if (!settings) {
-      console.log("No settings found, creating defaults...");
       settings = await Settings.create({
         id: 'global',
         mandatoryChannels: [
@@ -117,7 +150,7 @@ app.get('/api/init/:tgId', async (req, res) => {
     res.status(200).json({ user, tasks, settings, withdrawals, allUsers });
   } catch (err) {
     console.error("Init Error:", err);
-    res.status(500).json({ error: "Failed to initialize app data" });
+    res.status(500).json({ error: "Internal Server Error during initialization" });
   }
 });
 
@@ -125,6 +158,7 @@ app.get('/api/init/:tgId', async (req, res) => {
 app.post('/api/user/sync', async (req, res) => {
   const { telegramId, username, balance, xp, level, isVerified, role } = req.body;
   try {
+    if (mongoose.connection.readyState !== 1) throw new Error("DB connection offline");
     const user = await User.findOneAndUpdate(
       { telegramId },
       { username, balance, xp, level, isVerified, role },
@@ -211,19 +245,19 @@ app.post('/api/verify', async (req, res) => {
   }
 });
 
-// 404 Handler for API
+// Catch-all route
 app.use((req, res) => {
-  res.status(404).json({ error: "Endpoint not found" });
+  res.status(404).json({ error: "Route not found" });
 });
 
-// Connect and Start
-mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log('✅ Connected to MongoDB Atlas');
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => console.log(`🚀 API running on port ${PORT}`));
-  })
-  .catch(err => {
-    console.error('❌ Database connection failed:', err.message);
-    process.exit(1);
-  });
+// ==========================================
+// 🚀 SERVER STARTUP
+// ==========================================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 EARNBOT BACKEND IS LIVE ON PORT ${PORT}`);
+  
+  mongoose.connect(MONGO_URI)
+    .then(() => console.log('✅ DATABASE LINK ESTABLISHED'))
+    .catch(err => console.error('❌ DATABASE LINK FAILED:', err.message));
+});
