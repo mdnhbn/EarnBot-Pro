@@ -10,6 +10,8 @@ import AdminPanel from './components/AdminPanel';
 import JoinGuard from './components/JoinGuard';
 import { SUPER_ADMIN_ID, DEFAULT_SETTINGS, INITIAL_TASKS } from './constants';
 
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+
 const App: React.FC = () => {
   const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
@@ -20,65 +22,94 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isLoading, setIsLoading] = useState(true);
 
-  // --- DB SYNC (LocalStorage for now, easily switch to MongoDB API) ---
+  // --- RECOVERY FROM BACKEND ---
   useEffect(() => {
-    const savedSettings = localStorage.getItem('eb_settings');
-    const savedTasks = localStorage.getItem('eb_tasks');
-    const savedWithdrawals = localStorage.getItem('eb_withdrawals');
-    const savedUsers = localStorage.getItem('eb_users');
+    const initApp = async () => {
+      try {
+        // In production: window.Telegram.WebApp.initDataUnsafe.user.id
+        const tgId = 929198867; 
+        
+        const res = await fetch(`${API_BASE}/api/init/${tgId}`);
+        const data = await res.json();
+        
+        if (data.settings) setSettings(data.settings);
+        if (data.tasks) setTasks(data.tasks);
+        if (data.withdrawals) setWithdrawals(data.withdrawals);
+        if (data.allUsers) setUsers(data.allUsers);
 
-    if (savedSettings) setSettings(JSON.parse(savedSettings));
-    if (savedTasks) setTasks(JSON.parse(savedTasks));
-    if (savedWithdrawals) setWithdrawals(JSON.parse(savedWithdrawals));
-
-    setTimeout(() => {
-      const allUsers: User[] = savedUsers ? JSON.parse(savedUsers) : [];
-      setUsers(allUsers);
-
-      // In production: window.Telegram.WebApp.initDataUnsafe.user.id
-      const currentTgId = 929198867; // MOCKED FOR TESTING YOUR ADMIN ACCESS
-      
-      let user = allUsers.find(u => u.telegramId === currentTgId);
-      
-      if (!user) {
-        user = {
-          id: 'u' + Math.random().toString(36).substr(2, 9),
-          telegramId: currentTgId,
-          username: 'User_' + currentTgId,
-          balance: 0,
-          xp: 0,
-          level: 1,
-          role: currentTgId === SUPER_ADMIN_ID ? UserRole.ADMIN : UserRole.USER,
-          joinedChannels: [],
-          isBanned: false,
-          isVerified: false
-        };
-        const updatedUsers = [...allUsers, user];
-        setUsers(updatedUsers);
+        if (data.user) {
+          setCurrentUser(data.user);
+        } else {
+          // Create new user record if they don't exist in MongoDB
+          const newUser: User = {
+            id: 'u' + Math.random().toString(36).substr(2, 9),
+            telegramId: tgId,
+            username: 'User_' + tgId,
+            balance: 0,
+            xp: 0,
+            level: 1,
+            role: tgId === SUPER_ADMIN_ID ? UserRole.ADMIN : UserRole.USER,
+            joinedChannels: [],
+            isBanned: false,
+            isVerified: false
+          };
+          await fetch(`${API_BASE}/api/user/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newUser)
+          });
+          setCurrentUser(newUser);
+        }
+      } catch (err) {
+        console.error("Initialization failed:", err);
+      } finally {
+        setIsLoading(false);
       }
-      
-      setCurrentUser(user);
-      setIsLoading(false);
-    }, 1000);
+    };
+
+    initApp();
   }, []);
 
-  useEffect(() => {
-    if (!isLoading) {
-      localStorage.setItem('eb_settings', JSON.stringify(settings));
-      localStorage.setItem('eb_tasks', JSON.stringify(tasks));
-      localStorage.setItem('eb_withdrawals', JSON.stringify(withdrawals));
-      localStorage.setItem('eb_users', JSON.stringify(users));
-    }
-  }, [settings, tasks, withdrawals, users, isLoading]);
-
-  const handleUpdateUser = useCallback((updates: Partial<User>) => {
+  const handleUpdateUser = useCallback(async (updates: Partial<User>) => {
     setCurrentUser(prev => {
       if (!prev) return null;
       const updated = { ...prev, ...updates };
-      setUsers(all => all.map(u => u.id === prev.id ? updated : u));
+      
+      // Sync with MongoDB
+      fetch(`${API_BASE}/api/user/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+
+      setUsers(all => all.map(u => u.telegramId === prev.telegramId ? updated : u));
       return updated;
     });
   }, []);
+
+  // Admin Specific Handlers
+  const handleUpdateSettings = async (newSettings: GlobalSettings) => {
+    setSettings(newSettings);
+    await fetch(`${API_BASE}/api/admin/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newSettings)
+    });
+  };
+
+  const handleAddTask = async (task: Task) => {
+    setTasks([...tasks, task]);
+    await fetch(`${API_BASE}/api/admin/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(task)
+    });
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    setTasks(tasks.filter(t => t.id !== id));
+    await fetch(`${API_BASE}/api/admin/tasks/${id}`, { method: 'DELETE' });
+  };
 
   const isSuperAdmin = currentUser?.telegramId === SUPER_ADMIN_ID;
 
@@ -86,14 +117,14 @@ const App: React.FC = () => {
     <div className="flex h-screen items-center justify-center bg-slate-950">
       <div className="text-center animate-pulse">
         <div className="w-16 h-16 bg-blue-600 rounded-3xl mx-auto mb-4 flex items-center justify-center text-2xl shadow-2xl">💎</div>
-        <p className="text-slate-500 text-xs font-black tracking-widest uppercase">Connecting to Database...</p>
+        <p className="text-slate-500 text-xs font-black tracking-widest uppercase italic">Secure Handshake with Database...</p>
       </div>
     </div>
   );
 
   if (currentUser?.isBanned) return (
     <div className="flex h-screen items-center justify-center bg-slate-950 p-10 text-center">
-       <div><span className="text-7xl">🚫</span><h1 className="text-2xl font-black mt-4">BAN ACTIVE</h1><p className="text-slate-500 mt-2">Access denied by administrator.</p></div>
+       <div><span className="text-7xl">🚫</span><h1 className="text-2xl font-black mt-4 uppercase">Blacklisted</h1><p className="text-slate-500 mt-2">Access denied. Contact support if you believe this is a mistake.</p></div>
     </div>
   );
 
@@ -109,7 +140,7 @@ const App: React.FC = () => {
       <header className="sticky top-0 z-50 bg-slate-950/90 backdrop-blur-xl border-b border-slate-900 p-4 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black shadow-lg">E</div>
-          <span className="font-black italic text-lg tracking-tighter uppercase">EarnBot <span className="text-blue-500">Pro</span></span>
+          <span className="font-black italic text-lg tracking-tighter uppercase tracking-widest">EarnBot <span className="text-blue-500">Pro</span></span>
         </div>
         <div className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800">
           <span className="text-yellow-400 font-black text-xs">💎 {currentUser?.balance.toLocaleString()}</span>
@@ -123,7 +154,7 @@ const App: React.FC = () => {
         {activeTab === 'wallet' && <Wallet user={currentUser} settings={settings} withdrawals={withdrawals} setWithdrawals={setWithdrawals} onUpdateUser={handleUpdateUser} />}
         {activeTab === 'admin' && isSuperAdmin && (
           <AdminPanel 
-            settings={settings} setSettings={setSettings}
+            settings={settings} setSettings={handleUpdateSettings}
             tasks={tasks} setTasks={setTasks}
             users={users} setUsers={setUsers}
             withdrawals={withdrawals} setWithdrawals={setWithdrawals}
