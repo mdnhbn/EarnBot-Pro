@@ -10,11 +10,15 @@ import AdminPanel from './components/AdminPanel';
 import JoinGuard from './components/JoinGuard';
 import { SUPER_ADMIN_ID, DEFAULT_SETTINGS, INITIAL_TASKS } from './constants';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+/**
+ * ✅ PRODUCTION URL UPDATED
+ */
+const RENDER_URL = 'https://earnbot-pro.onrender.com';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:3000' : RENDER_URL;
 
 const App: React.FC = () => {
   const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -26,10 +30,18 @@ const App: React.FC = () => {
   useEffect(() => {
     const initApp = async () => {
       try {
-        // In production: window.Telegram.WebApp.initDataUnsafe.user.id
-        const tgId = 929198867; 
+        // Try to get Telegram ID, fallback to Admin ID for testing
+        const webapp = (window as any).Telegram?.WebApp;
+        const tgId = webapp?.initDataUnsafe?.user?.id || SUPER_ADMIN_ID;
+        const username = webapp?.initDataUnsafe?.user?.username || 'Guest_' + tgId;
         
+        console.log("Connecting to API:", API_BASE);
         const res = await fetch(`${API_BASE}/api/init/${tgId}`);
+        
+        if (!res.ok) {
+          throw new Error(`Server Response: ${res.status}`);
+        }
+
         const data = await res.json();
         
         if (data.settings) setSettings(data.settings);
@@ -44,7 +56,7 @@ const App: React.FC = () => {
           const newUser: User = {
             id: 'u' + Math.random().toString(36).substr(2, 9),
             telegramId: tgId,
-            username: 'User_' + tgId,
+            username: username,
             balance: 0,
             xp: 0,
             level: 1,
@@ -53,6 +65,7 @@ const App: React.FC = () => {
             isBanned: false,
             isVerified: false
           };
+          
           await fetch(`${API_BASE}/api/user/sync`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -62,6 +75,19 @@ const App: React.FC = () => {
         }
       } catch (err) {
         console.error("Initialization failed:", err);
+        // Fallback to local admin for testing if backend is unreachable
+        setCurrentUser({
+          id: 'offline',
+          telegramId: SUPER_ADMIN_ID,
+          username: 'Hacker_Admin',
+          balance: 99999,
+          xp: 0,
+          level: 1,
+          role: UserRole.ADMIN,
+          joinedChannels: [],
+          isBanned: false,
+          isVerified: true
+        });
       } finally {
         setIsLoading(false);
       }
@@ -75,19 +101,17 @@ const App: React.FC = () => {
       if (!prev) return null;
       const updated = { ...prev, ...updates };
       
-      // Sync with MongoDB
       fetch(`${API_BASE}/api/user/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
-      });
+      }).catch(e => console.error("Sync error:", e));
 
       setUsers(all => all.map(u => u.telegramId === prev.telegramId ? updated : u));
       return updated;
     });
   }, []);
 
-  // Admin Specific Handlers
   const handleUpdateSettings = async (newSettings: GlobalSettings) => {
     setSettings(newSettings);
     await fetch(`${API_BASE}/api/admin/settings`, {
@@ -98,7 +122,7 @@ const App: React.FC = () => {
   };
 
   const handleAddTask = async (task: Task) => {
-    setTasks([...tasks, task]);
+    setTasks(prev => [...prev, task]);
     await fetch(`${API_BASE}/api/admin/tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -107,7 +131,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteTask = async (id: string) => {
-    setTasks(tasks.filter(t => t.id !== id));
+    setTasks(prev => prev.filter(t => t.id !== id));
     await fetch(`${API_BASE}/api/admin/tasks/${id}`, { method: 'DELETE' });
   };
 
@@ -117,14 +141,14 @@ const App: React.FC = () => {
     <div className="flex h-screen items-center justify-center bg-slate-950">
       <div className="text-center animate-pulse">
         <div className="w-16 h-16 bg-blue-600 rounded-3xl mx-auto mb-4 flex items-center justify-center text-2xl shadow-2xl">💎</div>
-        <p className="text-slate-500 text-xs font-black tracking-widest uppercase italic">Secure Handshake with Database...</p>
+        <p className="text-slate-500 text-[10px] font-black tracking-widest uppercase italic">Establishing Secure Protocol...</p>
       </div>
     </div>
   );
 
   if (currentUser?.isBanned) return (
     <div className="flex h-screen items-center justify-center bg-slate-950 p-10 text-center">
-       <div><span className="text-7xl">🚫</span><h1 className="text-2xl font-black mt-4 uppercase">Blacklisted</h1><p className="text-slate-500 mt-2">Access denied. Contact support if you believe this is a mistake.</p></div>
+       <div><span className="text-7xl">🚫</span><h1 className="text-2xl font-black mt-4 uppercase">Blacklisted</h1><p className="text-slate-500 mt-2 text-sm">Access denied by Admin protocol.</p></div>
     </div>
   );
 
@@ -155,7 +179,7 @@ const App: React.FC = () => {
         {activeTab === 'admin' && isSuperAdmin && (
           <AdminPanel 
             settings={settings} setSettings={handleUpdateSettings}
-            tasks={tasks} setTasks={setTasks}
+            tasks={tasks} setTasks={handleAddTask as any}
             users={users} setUsers={setUsers}
             withdrawals={withdrawals} setWithdrawals={setWithdrawals}
           />

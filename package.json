@@ -10,7 +10,12 @@
   },
   "dependencies": {
     "react-dom": "^19.2.3",
-    "react": "^19.2.3"
+    "react": "^19.2.3",
+    "express": "^5.2.1",
+    "dotenv": "^17.2.3",
+    "cors": "^2.8.5",
+    "mongoose": "^9.1.4",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

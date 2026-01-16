@@ -1,19 +1,21 @@
 
 /**
- * EARNBOT PRO - BACKEND ENGINE
+ * EARNBOT PRO - BACKEND ENGINE (ESM VERSION)
  * ----------------------------
  * Handles MongoDB persistence, Telegram verification, and User management.
  */
 
-const express = require('express');
-const mongoose = require('mongoose');
-const fetch = require('node-fetch');
-const cors = require('cors');
-require('dotenv').config();
+import express from 'express';
+import mongoose from 'mongoose';
+import fetch from 'node-fetch';
+import cors from 'cors';
+import 'dotenv/config';
 
 const app = express();
-app.use(express.json());
+
+// Standard Middlewares
 app.use(cors());
+app.use(express.json());
 
 // ==========================================
 // 🔑 CONFIGURATION
@@ -75,18 +77,26 @@ const Withdrawal = mongoose.model('Withdrawal', WithdrawalSchema);
 // 📡 API ENDPOINTS
 // ==========================================
 
-// Initial Load: Gets everything for the frontend in one call
+// Request Logging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
+
+// Initial Load
 app.get('/api/init/:tgId', async (req, res) => {
   try {
     const tgId = parseInt(req.params.tgId);
+    console.log(`Initializing app for user: ${tgId}`);
+    
     let user = await User.findOne({ telegramId: tgId });
     const tasks = await Task.find({});
     const withdrawals = await Withdrawal.find({});
-    const allUsers = await User.find({});
+    const allUsers = await User.find({}).limit(100); 
     let settings = await Settings.findOne({ id: 'global' });
 
     if (!settings) {
-      // Create default settings if database is empty
+      console.log("No settings found, creating defaults...");
       settings = await Settings.create({
         id: 'global',
         mandatoryChannels: [
@@ -94,16 +104,20 @@ app.get('/api/init/:tgId', async (req, res) => {
         ],
         levelRequirements: [
           { level: 1, xpNeeded: 0, bonus: 0 },
-          { level: 2, xpNeeded: 500, bonus: 50 }
+          { level: 2, xpNeeded: 500, bonus: 50 },
+          { level: 3, xpNeeded: 1500, bonus: 150 },
+          { level: 4, xpNeeded: 4000, bonus: 400 },
+          { level: 5, xpNeeded: 10000, bonus: 1000 }
         ],
         minWithdrawalUSDT: 1000,
         minWithdrawalTRX: 500
       });
     }
 
-    res.json({ user, tasks, settings, withdrawals, allUsers });
+    res.status(200).json({ user, tasks, settings, withdrawals, allUsers });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Init Error:", err);
+    res.status(500).json({ error: "Failed to initialize app data" });
   }
 });
 
@@ -170,7 +184,7 @@ app.patch('/api/admin/withdrawals/:id', async (req, res) => {
   }
 });
 
-// Telegram Verification (Already set up in previous step, kept for consistency)
+// Telegram Verification
 app.post('/api/verify', async (req, res) => {
   const { userId, channels } = req.body;
   try {
@@ -197,11 +211,19 @@ app.post('/api/verify', async (req, res) => {
   }
 });
 
+// 404 Handler for API
+app.use((req, res) => {
+  res.status(404).json({ error: "Endpoint not found" });
+});
+
 // Connect and Start
 mongoose.connect(MONGO_URI)
   .then(() => {
-    console.log('✅ Connected to Hacker Database');
+    console.log('✅ Connected to MongoDB Atlas');
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => console.log(`🚀 API running on port ${PORT}`));
   })
-  .catch(err => console.error('❌ Database connection failed:', err));
+  .catch(err => {
+    console.error('❌ Database connection failed:', err.message);
+    process.exit(1);
+  });
