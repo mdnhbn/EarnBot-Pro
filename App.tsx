@@ -24,13 +24,14 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [loadingStep, setLoadingStep] = useState('Connecting to Engine...');
+  const [loadingStep, setLoadingStep] = useState('Initializing Application...');
 
   const initApp = async () => {
     setIsLoading(true);
     setError(null);
     let retryCount = 0;
     const maxRetries = 10;
+    const retryInterval = 3000; // 3 seconds
 
     const attemptFetch = async () => {
       try {
@@ -44,16 +45,19 @@ const App: React.FC = () => {
         const tgId = webapp?.initDataUnsafe?.user?.id || SUPER_ADMIN_ID;
         const username = webapp?.initDataUnsafe?.user?.username || 'user' + tgId;
         
-        setLoadingStep(`Contacting Server... (Attempt ${retryCount + 1})`);
+        setLoadingStep(`Connecting to Engine... (Attempt ${retryCount + 1}/${maxRetries})`);
         
         const res = await fetch(`${API_BASE}/api/init/${tgId}`, {
           method: 'GET',
-          headers: { 'Accept': 'application/json' }
+          mode: 'cors',
+          headers: { 
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
         });
         
         if (!res.ok) {
-          if (res.status === 503) throw new Error("Server is currently waking up...");
-          throw new Error(`Connection Error (Status ${res.status})`);
+          throw new Error(`Server Error: ${res.status}`);
         }
 
         const data = await res.json();
@@ -66,7 +70,7 @@ const App: React.FC = () => {
         if (data.user) {
           setCurrentUser(data.user);
         } else {
-          setLoadingStep('Syncing Profile...');
+          setLoadingStep('Synchronizing Cloud Profile...');
           const newUser: User = {
             id: 'u' + Math.random().toString(36).substr(2, 9),
             telegramId: tgId,
@@ -82,22 +86,23 @@ const App: React.FC = () => {
           
           const syncRes = await fetch(`${API_BASE}/api/user/sync`, {
             method: 'POST',
+            mode: 'cors',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newUser)
           });
           
-          if (!syncRes.ok) throw new Error("Failed to sync user data.");
+          if (!syncRes.ok) throw new Error("Cloud Profile Sync Failed");
           setCurrentUser(newUser);
         }
         setIsLoading(false);
       } catch (err: any) {
-        console.warn("Init Error:", err);
-        if (retryCount < maxRetries) {
+        console.error("Fetch Attempt Failed:", err);
+        if (retryCount < maxRetries - 1) {
           retryCount++;
-          setLoadingStep(err.message || "Retrying connection...");
-          setTimeout(attemptFetch, 3000);
+          setLoadingStep(`Waking up Server... (Retrying in 3s)`);
+          setTimeout(attemptFetch, retryInterval);
         } else {
-          setError("Engine offline. Please check your connection or wait for the server to wake up on Render.");
+          setError("FAILED TO FETCH: The server is not responding after 10 attempts. Please ensure the Render backend is live and the URL is correct.");
           setIsLoading(false);
         }
       }
@@ -117,9 +122,10 @@ const App: React.FC = () => {
       
       fetch(`${API_BASE}/api/user/sync`, {
         method: 'POST',
+        mode: 'cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
-      }).catch(e => console.error("Cloud sync error:", e));
+      }).catch(e => console.error("Update sync error:", e));
 
       setUsers(all => all.map(u => u.telegramId === prev.telegramId ? updated : u));
       return updated;
@@ -130,6 +136,7 @@ const App: React.FC = () => {
     setSettings(newSettings);
     await fetch(`${API_BASE}/api/admin/settings`, {
       method: 'POST',
+      mode: 'cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSettings)
     }).catch(console.error);
@@ -139,6 +146,7 @@ const App: React.FC = () => {
     setTasks(prev => [...prev, task]);
     await fetch(`${API_BASE}/api/admin/tasks`, {
       method: 'POST',
+      mode: 'cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(task)
     }).catch(console.error);
@@ -146,24 +154,30 @@ const App: React.FC = () => {
 
   const handleDeleteTask = async (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
-    await fetch(`${API_BASE}/api/admin/tasks/${id}`, { method: 'DELETE' }).catch(console.error);
+    await fetch(`${API_BASE}/api/admin/tasks/${id}`, { 
+      method: 'DELETE',
+      mode: 'cors'
+    }).catch(console.error);
   };
 
   const isSuperAdmin = currentUser?.telegramId === SUPER_ADMIN_ID;
 
   if (error) return (
     <div className="flex h-screen flex-col items-center justify-center bg-[#020617] p-8 text-center">
-      <div className="text-5xl mb-6">⚠️</div>
-      <h1 className="text-white font-black text-xl uppercase mb-4">Connection Failed</h1>
-      <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+      <div className="text-5xl mb-6">🛰️</div>
+      <h1 className="text-white font-black text-xl uppercase mb-4 tracking-tighter">Handshake Failed</h1>
+      <p className="text-red-400 text-xs mb-8 leading-relaxed font-mono">
         {error}
       </p>
-      <button 
-        onClick={() => window.location.reload()}
-        className="bg-blue-600 px-10 py-4 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95"
-      >
-        Retry Connection
-      </button>
+      <div className="space-y-3 w-full">
+        <button 
+          onClick={() => window.location.reload()}
+          className="w-full bg-blue-600 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95"
+        >
+          Force Restart App
+        </button>
+        <p className="text-slate-600 text-[10px] uppercase font-bold tracking-widest">Target: earnbot-pro.onrender.com</p>
+      </div>
     </div>
   );
 

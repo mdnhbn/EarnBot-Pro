@@ -3,9 +3,9 @@
  */
 
 import express from 'express';
+import cors from 'cors';
 import mongoose from 'mongoose';
 import fetch from 'node-fetch';
-import cors from 'cors';
 import 'dotenv/config';
 
 const app = express();
@@ -13,8 +13,21 @@ const app = express();
 // ==========================================
 // 🛡️ UNIVERSAL CORS POLICY (TOP PRIORITY)
 // ==========================================
-app.use(cors({ origin: '*' }));
+// This MUST be the first middleware to handle all cross-origin requests immediately.
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true
+}));
+
 app.use(express.json());
+
+// Request logging for debugging
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} from ${req.headers.origin || 'unknown'}`);
+  next();
+});
 
 // ==========================================
 // 🔑 CONFIGURATION
@@ -76,9 +89,13 @@ const Withdrawal = mongoose.model('Withdrawal', WithdrawalSchema);
 // 📡 API ENDPOINTS
 // ==========================================
 
-// Health check
+// Health check (Public)
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'active', db: mongoose.connection.readyState });
+  res.status(200).json({ 
+    status: 'active', 
+    db: mongoose.connection.readyState,
+    time: new Date().toISOString()
+  });
 });
 
 // Initial Load
