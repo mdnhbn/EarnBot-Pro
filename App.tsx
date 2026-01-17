@@ -9,8 +9,10 @@ import AdminPanel from './components/AdminPanel';
 import JoinGuard from './components/JoinGuard';
 import { SUPER_ADMIN_ID, DEFAULT_SETTINGS } from './constants';
 
+console.log('🚀 EarnBot Pro: App.tsx Execution Started');
+
 /**
- * ✅ FINAL HARDCODED BACKEND URL
+ * ✅ 100% HARDCODED BACKEND URL
  */
 const API_BASE = 'https://earnbot-pro.onrender.com';
 
@@ -26,92 +28,108 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState('Initializing Application...');
 
-  const initApp = async () => {
-    setIsLoading(true);
-    setError(null);
-    let retryCount = 0;
-    const maxRetries = 10;
-    const retryInterval = 3000; // 3 seconds
+  useEffect(() => {
+    console.log('🛠️ App: Starting Initialization Sequence');
+    
+    // 1. Safe Telegram WebApp Initialization
+    let tgUser: any = null;
+    try {
+      const webapp = (window as any).Telegram?.WebApp;
+      if (webapp) {
+        console.log('📱 Telegram WebApp Detected');
+        webapp.ready();
+        webapp.expand();
+        webapp.setHeaderColor('#020617');
+        webapp.setBackgroundColor('#020617');
+        tgUser = webapp.initDataUnsafe?.user;
+      } else {
+        console.warn('💻 Browser Mode: Running in Demo Mode');
+      }
+    } catch (e) {
+      console.error('❌ Telegram Init Failed:', e);
+    }
 
-    const attemptFetch = async () => {
-      try {
-        const webapp = (window as any).Telegram?.WebApp;
-        if (webapp) {
-          webapp.expand();
-          webapp.ready();
-          webapp.setHeaderColor('#020617');
-        }
+    const initApp = async () => {
+      setIsLoading(true);
+      setError(null);
+      let retryCount = 0;
+      const maxRetries = 12; // 36 seconds total wait time
+      const retryInterval = 3000;
 
-        const tgId = webapp?.initDataUnsafe?.user?.id || SUPER_ADMIN_ID;
-        const username = webapp?.initDataUnsafe?.user?.username || 'user' + tgId;
-        
-        setLoadingStep(`Connecting to Engine... (Attempt ${retryCount + 1}/${maxRetries})`);
-        
-        const res = await fetch(`${API_BASE}/api/init/${tgId}`, {
-          method: 'GET',
-          mode: 'cors',
-          headers: { 
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (!res.ok) {
-          throw new Error(`Server Error: ${res.status}`);
-        }
-
-        const data = await res.json();
-        
-        if (data.settings) setSettings(data.settings);
-        if (data.tasks) setTasks(data.tasks);
-        if (data.withdrawals) setWithdrawals(data.withdrawals);
-        if (data.allUsers) setUsers(data.allUsers);
-
-        if (data.user) {
-          setCurrentUser(data.user);
-        } else {
-          setLoadingStep('Synchronizing Cloud Profile...');
-          const newUser: User = {
-            id: 'u' + Math.random().toString(36).substr(2, 9),
-            telegramId: tgId,
-            username: username,
-            balance: 0,
-            xp: 0,
-            level: 1,
-            role: tgId === SUPER_ADMIN_ID ? UserRole.ADMIN : UserRole.USER,
-            joinedChannels: [],
-            isBanned: false,
-            isVerified: false
-          };
+      const attemptFetch = async () => {
+        try {
+          const tgId = tgUser?.id || SUPER_ADMIN_ID;
+          const username = tgUser?.username || 'GuestUser_' + tgId;
           
-          const syncRes = await fetch(`${API_BASE}/api/user/sync`, {
-            method: 'POST',
+          setLoadingStep(`Syncing with Engine... (Attempt ${retryCount + 1}/${maxRetries})`);
+          console.log(`📡 Connecting to: ${API_BASE}/api/init/${tgId}`);
+          
+          const res = await fetch(`${API_BASE}/api/init/${tgId}`, {
+            method: 'GET',
             mode: 'cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newUser)
+            headers: { 
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
           });
           
-          if (!syncRes.ok) throw new Error("Cloud Profile Sync Failed");
-          setCurrentUser(newUser);
-        }
-        setIsLoading(false);
-      } catch (err: any) {
-        console.error("Fetch Attempt Failed:", err);
-        if (retryCount < maxRetries - 1) {
-          retryCount++;
-          setLoadingStep(`Waking up Server... (Retrying in 3s)`);
-          setTimeout(attemptFetch, retryInterval);
-        } else {
-          setError("FAILED TO FETCH: The server is not responding after 10 attempts. Please ensure the Render backend is live and the URL is correct.");
+          if (!res.ok) {
+            throw new Error(`HTTP Error: ${res.status}`);
+          }
+
+          const data = await res.json();
+          console.log('✅ Connection Successful: Data Received');
+          
+          if (data.settings) setSettings(data.settings);
+          if (data.tasks) setTasks(data.tasks);
+          if (data.withdrawals) setWithdrawals(data.withdrawals);
+          if (data.allUsers) setUsers(data.allUsers);
+
+          if (data.user) {
+            setCurrentUser(data.user);
+          } else {
+            console.log('👤 Registering New Profile...');
+            setLoadingStep('Creating Earning Profile...');
+            const newUser: User = {
+              id: 'u' + Math.random().toString(36).substr(2, 9),
+              telegramId: tgId,
+              username: username,
+              balance: 0,
+              xp: 0,
+              level: 1,
+              role: tgId === SUPER_ADMIN_ID ? UserRole.ADMIN : UserRole.USER,
+              joinedChannels: [],
+              isBanned: false,
+              isVerified: false
+            };
+            
+            const syncRes = await fetch(`${API_BASE}/api/user/sync`, {
+              method: 'POST',
+              mode: 'cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newUser)
+            });
+            
+            if (!syncRes.ok) throw new Error("Profile Creation Failed");
+            setCurrentUser(newUser);
+          }
           setIsLoading(false);
+        } catch (err: any) {
+          console.error("⚠️ Connection Attempt Failed:", err.message);
+          if (retryCount < maxRetries - 1) {
+            retryCount++;
+            setLoadingStep(`Engine is starting... (${retryCount}/${maxRetries})`);
+            setTimeout(attemptFetch, retryInterval);
+          } else {
+            setError("NETWORK TIMEOUT: The earning engine is not responding. Please check your internet or retry later.");
+            setIsLoading(false);
+          }
         }
-      }
+      };
+
+      attemptFetch();
     };
 
-    attemptFetch();
-  };
-
-  useEffect(() => {
     initApp();
   }, []);
 
@@ -125,7 +143,7 @@ const App: React.FC = () => {
         mode: 'cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
-      }).catch(e => console.error("Update sync error:", e));
+      }).catch(e => console.error("Update Sync Error:", e));
 
       setUsers(all => all.map(u => u.telegramId === prev.telegramId ? updated : u));
       return updated;
@@ -163,46 +181,43 @@ const App: React.FC = () => {
   const isSuperAdmin = currentUser?.telegramId === SUPER_ADMIN_ID;
 
   if (error) return (
-    <div className="flex h-screen flex-col items-center justify-center bg-[#020617] p-8 text-center">
-      <div className="text-5xl mb-6">🛰️</div>
-      <h1 className="text-white font-black text-xl uppercase mb-4 tracking-tighter">Handshake Failed</h1>
-      <p className="text-red-400 text-xs mb-8 leading-relaxed font-mono">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#020617] p-10 text-center">
+      <div className="text-6xl mb-6">🔌</div>
+      <h1 className="text-white font-black text-xl uppercase mb-4 tracking-widest">Handshake Failed</h1>
+      <p className="text-red-400 text-[10px] font-mono mb-8 leading-relaxed max-w-xs mx-auto border border-red-900/50 p-4 bg-red-950/20 rounded-xl">
         {error}
       </p>
-      <div className="space-y-3 w-full">
-        <button 
-          onClick={() => window.location.reload()}
-          className="w-full bg-blue-600 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95"
-        >
-          Force Restart App
-        </button>
-        <p className="text-slate-600 text-[10px] uppercase font-bold tracking-widest">Target: earnbot-pro.onrender.com</p>
-      </div>
+      <button 
+        onClick={() => window.location.reload()}
+        className="w-full bg-blue-600 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95"
+      >
+        Retry Connection
+      </button>
     </div>
   );
 
   if (isLoading) return (
-    <div className="flex h-screen flex-col items-center justify-center bg-[#020617] p-8 text-center">
-      <div className="relative mb-10">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#020617] p-8 text-center">
+      <div className="relative mb-12">
         <div className="absolute inset-0 bg-blue-500 rounded-full blur-[60px] opacity-20 animate-pulse"></div>
-        <div className="w-24 h-24 bg-blue-600 rounded-[2.5rem] flex items-center justify-center text-4xl shadow-[0_0_50px_rgba(37,99,235,0.5)] relative z-10 animate-pulse-slow">
+        <div className="w-24 h-24 bg-blue-600 rounded-[2.5rem] flex items-center justify-center text-4xl shadow-[0_0_50px_rgba(37,99,235,0.4)] relative z-10 animate-pulse-slow">
           💎
         </div>
       </div>
-      <h1 className="text-white font-black text-2xl tracking-[0.3em] uppercase italic mb-2">EarnBot Pro</h1>
-      <div className="flex items-center gap-2 mt-2">
+      <h1 className="text-white font-black text-2xl tracking-[0.4em] uppercase italic mb-3">EarnBot Pro</h1>
+      <div className="flex items-center gap-2 mt-4">
         <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
         <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
         <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
       </div>
-      <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] mt-8 opacity-70">
+      <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.5em] mt-10 opacity-80">
         {loadingStep}
       </p>
     </div>
   );
 
   if (currentUser?.isBanned) return (
-    <div className="flex h-screen items-center justify-center bg-[#020617] p-10 text-center">
+    <div className="flex min-h-screen items-center justify-center bg-[#020617] p-10 text-center">
        <div>
          <span className="text-7xl">🚫</span>
          <h1 className="text-2xl font-black mt-4 uppercase text-red-500 tracking-tighter">Access Denied</h1>

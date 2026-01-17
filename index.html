@@ -7,22 +7,34 @@
     <title>EarnBot Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      body {
+      body, html {
         background-color: #020617;
         color: white;
-        -webkit-tap-highlight-color: transparent;
         margin: 0;
         padding: 0;
+        min-height: 100vh;
+        width: 100%;
+        display: block;
+      }
+      #root {
+        min-height: 100vh;
+        background-color: #020617;
+      }
+      .fallback-loader {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: -1; /* Behind root once loaded */
+        font-family: sans-serif;
       }
       .no-scrollbar::-webkit-scrollbar {
         display: none;
-      }
-      @keyframes pulse-slow {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.7; transform: scale(0.95); }
-      }
-      .animate-pulse-slow {
-        animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
       }
     </style>
     <script type="importmap">
@@ -33,15 +45,20 @@
     "react": "https://esm.sh/react@19.0.0",
     "react-dom": "https://esm.sh/react-dom@19.0.0",
     "express": "https://esm.sh/express@^5.2.1",
-    "dotenv/": "https://esm.sh/dotenv@^17.2.3/",
-    "mongoose": "https://esm.sh/mongoose@^9.1.4",
     "cors": "https://esm.sh/cors@^2.8.5",
-    "node-fetch": "https://esm.sh/node-fetch@^3.3.2"
+    "mongoose": "https://esm.sh/mongoose@^9.1.4",
+    "node-fetch": "https://esm.sh/node-fetch@^3.3.2",
+    "dotenv/": "https://esm.sh/dotenv@^17.2.3/"
   }
 }
 </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased overflow-x-hidden">
+    <!-- Visible Loading Fallback -->
+    <div class="fallback-loader">
+      <div style="font-size: 24px; font-weight: 900; margin-bottom: 10px;">EARNBOT PRO</div>
+      <div style="font-size: 12px; color: #475569; letter-spacing: 0.2em; text-transform: uppercase;">Booting System...</div>
+    </div>
     <div id="root"></div>
   </body>
 </html>

@@ -11,9 +11,8 @@ import 'dotenv/config';
 const app = express();
 
 // ==========================================
-// 🛡️ UNIVERSAL CORS POLICY (TOP PRIORITY)
+// 🛡️ UNIVERSAL CORS POLICY (MUST BE FIRST)
 // ==========================================
-// This MUST be the first middleware to handle all cross-origin requests immediately.
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -23,17 +22,10 @@ app.use(cors({
 
 app.use(express.json());
 
-// Request logging for debugging
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} from ${req.headers.origin || 'unknown'}`);
-  next();
-});
-
 // ==========================================
 // 🔑 CONFIGURATION
 // ==========================================
 const MONGO_URI = "mongodb+srv://mdnhbn_db_user:Hacker%40%23674621@cluster0.o6gdrcc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
-const BOT_TOKEN = "7434869863:AAEZC1Y4Cb_91-jYtDdybr97XkH7fuC2weM";
 
 // ==========================================
 // 🗄️ DATABASE SCHEMAS
@@ -89,21 +81,11 @@ const Withdrawal = mongoose.model('Withdrawal', WithdrawalSchema);
 // 📡 API ENDPOINTS
 // ==========================================
 
-// Health check (Public)
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'active', 
-    db: mongoose.connection.readyState,
-    time: new Date().toISOString()
-  });
-});
-
 // Initial Load
 app.get('/api/init/:tgId', async (req, res) => {
   try {
     const tgId = parseInt(req.params.tgId);
     
-    // Safety check for DB
     if (mongoose.connection.readyState !== 1) {
        return res.status(503).json({ error: "Initializing Database Engine..." });
     }
@@ -134,12 +116,11 @@ app.get('/api/init/:tgId', async (req, res) => {
 
     res.status(200).json({ user, tasks, settings, withdrawals, allUsers });
   } catch (err) {
-    console.error("Critical Init Error:", err);
-    res.status(500).json({ error: "Internal System Crash" });
+    console.error("Init Error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
-// User Sync
 app.post('/api/user/sync', async (req, res) => {
   const { telegramId, username, balance, xp, level, isVerified, role } = req.body;
   try {
@@ -154,7 +135,6 @@ app.post('/api/user/sync', async (req, res) => {
   }
 });
 
-// Admin Control
 app.post('/api/admin/settings', async (req, res) => {
   try {
     const settings = await Settings.findOneAndUpdate({ id: 'global' }, req.body, { upsert: true, new: true });
@@ -182,7 +162,6 @@ app.delete('/api/admin/tasks/:id', async (req, res) => {
   }
 });
 
-// Finance
 app.post('/api/withdrawals', async (req, res) => {
   try {
     const w = await Withdrawal.create(req.body);
@@ -201,17 +180,14 @@ app.patch('/api/admin/withdrawals/:id', async (req, res) => {
   }
 });
 
-// Catch-all
-app.use((req, res) => res.status(404).json({ error: "Endpoint Inactive" }));
-
 // ==========================================
-// 🚀 SERVER LAUNCH
+// 🚀 SERVER STARTUP
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 EARNBOT HUB ACTIVE: PORT ${PORT}`);
   
   mongoose.connect(MONGO_URI)
-    .then(() => console.log('🛡️ DATABASE ENCRYPTED LINK: SECURED'))
-    .catch(err => console.error('🛡️ DATABASE ENCRYPTED LINK: FAILED', err.message));
+    .then(() => console.log('🛡️ DATABASE SECURED'))
+    .catch(err => console.error('🛡️ DATABASE FAILED', err.message));
 });
